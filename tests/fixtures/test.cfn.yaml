@@ -1,0 +1,14 @@
+Description: Lab CFn that uses Hello Fixture
+Parameters:
+  TestParamValue:
+    Type: String
+
+Resources:
+
+  SsmParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: Test param from stack flight
+      Name: !Sub test-ssm-param-${AWS::StackName}
+      Value: !Ref TestParamValue

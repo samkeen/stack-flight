@@ -1,6 +1,7 @@
 import json
 import logging
 import multiprocessing
+from multiprocessing import Process
 import sys
 from datetime import datetime
 from time import sleep
@@ -12,24 +13,15 @@ cf = boto3.client('cloudformation')  # pylint: disable=C0103
 log = logging.getLogger('deploy.cf.create_or_update')  # pylint: disable=C0103
 
 
-
 def main(stack_name_prefix, number_of_stacks, template, parameters):
     'Update or create stack'
     template_data = _parse_template(template)
     parameter_data = _parse_parameters(parameters)
     number_of_stacks = _parameter_num_stacks(number_of_stacks)
-
-    jobs = []
+    >># read up here: https://www.journaldev.com/15631/python-multiprocessing-example
+    procs = []
     for i in range(number_of_stacks):
         sleep(2)
-        p = multiprocessing.Process(target=_worker, args=(stack_name_prefix, template_data, parameter_data,))
-        jobs.append(p)
-        p.start()
-
-    # _worker(stack_name_prefix, template_data, parameter_data)
-
-def _worker(stack_name_prefix, template_data, parameter_data):
-    try:
         stack_name = _stack_name(stack_name_prefix)
         params = {
             'StackName': stack_name,
@@ -37,6 +29,16 @@ def _worker(stack_name_prefix, template_data, parameter_data):
             'Parameters': parameter_data,
             'Capabilities': ['CAPABILITY_IAM']
         }
+        proc = multiprocessing.Process(name=stack_name, target=_worker, args=(stack_name, params,))
+        procs.append(proc)
+        proc.start()
+    for proc in procs:
+        proc.join()
+
+
+def _worker(stack_name, params):
+    log.debug(f'Starting process {multiprocessing.current_process().name}')
+    try:
         if _stack_exists(stack_name):
             print('Updating {}'.format(stack_name))
             stack_result = cf.update_stack(**params)
@@ -59,9 +61,21 @@ def _worker(stack_name_prefix, template_data, parameter_data):
             indent=2,
             default=json_serial
         ))
+        _delete_stack(stack_name)
+
+
+def _delete_stack(stack_name):
+    try:
+        print('Deleting {stack_name}')
+        cf.delete_stack(StackName=stack_name)
+    except ClientError as ex:
+        error_message = ex.response['Error']['Message']
+        print(error_message)
+
 
 def _stack_name(stack_name_prefix):
     return f'{stack_name_prefix}-{datetime.now().strftime("%Y%m%d-%f")}'
+
 
 def _parameter_num_stacks(number_of_stacks: str) -> int:
     parsed_int = int(number_of_stacks)
@@ -70,6 +84,7 @@ def _parameter_num_stacks(number_of_stacks: str) -> int:
     if parsed_int > 10:
         _bail_out(f'Sorry max of 10 stacks for now, your tried: "{parsed_int}"')
     return parsed_int
+
 
 def _parse_template(template):
     with open(template) as template_fileobj:
@@ -93,13 +108,16 @@ def _stack_exists(stack_name):
             return True
     return False
 
+
 def _usage():
     return 'Usage: python stack.py  stack-name-prefix  number-of-stacks  template-file  params-file'
+
 
 def _bail_out(message):
     log.fatal(message)
     print(_usage())
     exit(1)
+
 
 def json_serial(obj):
     """JSON serializer for objects not serializable by default json code"""
