@@ -1,26 +1,43 @@
 import json
 import logging
 import multiprocessing
-from multiprocessing import Process
 import sys
 from datetime import datetime
 from time import sleep
 
 import boto3
+import click
 from botocore.exceptions import ClientError
 
 cf = boto3.client('cloudformation')  # pylint: disable=C0103
 log = logging.getLogger('deploy.cf.create_or_update')  # pylint: disable=C0103
 
 
-def main(stack_name_prefix, number_of_stacks, template, parameters):
+@click.command()
+@click.option('--stack_count',
+              prompt='Number of stacks to launch',
+              default=1,
+              help='Number of stacks to launch')
+@click.option('--stack_name_prefix',
+              prompt='stack name prefix',
+              default='stack-flight',
+              help='The prefix used for stack names. A unique string is appended to this prefix')
+@click.option('--stack_file',
+              prompt='path to stack file',
+              # default='./stack.cfn.yaml',
+              help='path to stack file')
+@click.option('--stack_params_file',
+              prompt='path to stack params file',
+              # default='./stack.params.json',
+              help='path to stack params file')
+def main(stack_name_prefix, stack_count, stack_file, stack_params_file):
     'Update or create stack'
-    template_data = _parse_template(template)
-    parameter_data = _parse_parameters(parameters)
-    number_of_stacks = _parameter_num_stacks(number_of_stacks)
-    >># read up here: https://www.journaldev.com/15631/python-multiprocessing-example
+    template_data = _parse_template(stack_file)
+    parameter_data = _parse_parameters(stack_params_file)
+    stack_count = _parameter_num_stacks(stack_count)
+    # read up here: https://www.journaldev.com/15631/python-multiprocessing-example
     procs = []
-    for i in range(number_of_stacks):
+    for i in range(stack_count):
         sleep(2)
         stack_name = _stack_name(stack_name_prefix)
         params = {
@@ -66,7 +83,7 @@ def _worker(stack_name, params):
 
 def _delete_stack(stack_name):
     try:
-        print('Deleting {stack_name}')
+        print(f'Deleting {stack_name}')
         cf.delete_stack(StackName=stack_name)
     except ClientError as ex:
         error_message = ex.response['Error']['Message']
@@ -128,7 +145,4 @@ def json_serial(obj):
 
 
 if __name__ == '__main__':
-    args = sys.argv[1:]
-    if len(args) != 4:
-        _bail_out(f'Expecting 4 commandline arguments, got: [{len(args)}]')
-    main(*sys.argv[1:])
+    main()
