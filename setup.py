@@ -10,6 +10,6 @@ setup(
     ],
     entry_points='''
         [console_scripts]
-        stack-flight=stackflight:cli
+        stackflight=stackflight.cli:cli
     ''',
 )
